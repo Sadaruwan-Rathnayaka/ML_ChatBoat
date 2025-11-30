@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RAG Chatbot — Ask Questions</title>
+
+  <style>
+    :root{
+      --bg: #0f1724;
+      --card: #0b1220;
+      --muted: #94a3b8;
+      --accent: #4f46e5;
+      --accent-2: #0ea5e9;
+      --glass: rgba(255,255,255,0.03);
+      --success: #16a34a;
+      --danger: #ef4444;
+      --radius: 12px;
+      --max-width: 960px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      font-family: Inter, ui-sans-serif, system-ui;
+      margin:0;
+      padding:24px;
+      background: linear-gradient(180deg,#071029 0%, #0b1220 100%);
+      color:#e6eef8;
+      display:flex;
+      justify-content:center;
+    }
+
+    .container{
+      width:100%;
+      max-width:var(--max-width);
+    }
+
+    header{
+      display:flex;
+      align-items:center;
+      gap:16px;
+      margin-bottom:18px;
+    }
+    .logo{
+      width:56px;height:56px;border-radius:12px;
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      display:flex;align-items:center;justify-content:center;font-weight:700;
+      box-shadow: 0 6px 18px rgba(79,70,229,0.18);
+    }
+    h1{font-size:20px;margin:0}
+    p.lead{display:none;} /* HIDE second line (your request #1) */
+
+    main{display:grid;grid-template-columns:1fr 380px;gap:20px}
+    @media (max-width:920px){ main{grid-template-columns:1fr;} }
+
+    .card{
+      background:var(--card);
+      padding:18px;
+      border-radius:var(--radius);
+      box-shadow: 0 6px 24px rgba(2,6,23,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    label{
+      display:block;
+      color:#fff;
+      font-size:17px;      /* Requested */
+      font-weight:700;     /* Requested */
+      margin-bottom:8px
+    }
+
+    textarea#questionInput{
+      width:100%;min-height:72px;resize:vertical;
+      padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);
+      background:var(--glass);color:inherit;font-size:15px;
+    }
+
+    /* REMOVE placeholder (requested #3) */
+    textarea#questionInput::placeholder{
+      color:transparent;
+    }
+
+    .row{display:flex;gap:10px;align-items:center;margin-top:12px}
+    .btn{
+      padding:10px 14px;border-radius:10px;border:0;cursor:pointer;
+      background:linear-gradient(90deg,var(--accent),var(--accent-2));
+      color:white;font-weight:600;
+    }
+    .btn.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .btn:disabled{opacity:0.55;cursor:not-allowed}
+
+    /* Remove backend status row (requested #4) */
+    .status { display:none !important; }
+
+    .response{
+      margin-top:14px;border-radius:10px;padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.03)
+    }
+    .answer{white-space:pre-wrap;color:#dff3ff}
+    .context{white-space:pre-wrap;background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;margin-top:8px;color:var(--muted);font-size:14px}
+    .meta{margin-top:8px;color:var(--muted);font-size:13px}
+
+    .history-list{display:flex;flex-direction:column;gap:12px;max-height:72vh;overflow:auto;padding-right:6px}
+    .hist-item{background:rgba(255,255,255,0.02);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+    .hist-q{font-size:13px;color:#bcd7ff;margin-bottom:6px}
+
+    /* MAKE Conversation (session) bigger + bold (requested #2) */
+    .session-title{
+      font-size:17px !important;
+      font-weight:700 !important;
+      color:#fff !important;
+    }
+
+    footer{
+      display:none; /* HIDE footer completely (requested #5) */
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">AI</div>
+      <div>
+        <h1>RAG Chatbot</h1>
+        <p class="lead"></p>
+      </div>
+    </header>
+
+    <main>
+      <!-- LEFT -->
+      <section class="card">
+        <label for="questionInput">Type your question</label>
+        <textarea id="questionInput"></textarea>
+
+        <div class="row">
+          <button id="askBtn" class="btn">Ask</button>
+          <button id="copyBtn" class="btn secondary">Copy Answer</button>
+          <button id="clearBtn" class="btn secondary">Clear History</button>
+        </div>
+
+        <div id="responseArea" class="response" style="display:none">
+          <h4>Answer</h4>
+          <div id="answerText" class="answer"></div>
+
+          <div id="contextBox" style="display:none">
+            <h4 style="margin-top:12px">Retrieved context</h4>
+            <div id="contextText" class="context"></div>
+          </div>
+
+          <div id="metaBox" class="meta"></div>
+        </div>
+      </section>
+
+      <!-- RIGHT -->
+      <aside class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="session-title">Conversation (session)</div>
+          <div><span class="chip" id="itemsCount">0</span></div>
+        </div>
+
+        <div class="history-list" id="historyList"></div>
+      </aside>
+    </main>
+  </div>
+
+  <script>
+    const BACKEND_URL = "http://127.0.0.1:5000";
+
+    const askBtn = document.getElementById('askBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const qInput = document.getElementById('questionInput');
+    const responseArea = document.getElementById('responseArea');
+    const answerText = document.getElementById('answerText');
+    const contextBox = document.getElementById('contextBox');
+    const contextText = document.getElementById('contextText');
+    const metaBox = document.getElementById('metaBox');
+    const historyList = document.getElementById('historyList');
+    const itemsCount = document.getElementById('itemsCount');
+
+    let history = [];
+
+    function setLoading(isLoading){
+      askBtn.disabled = isLoading;
+      askBtn.innerHTML = isLoading ? '<span class="spinner"></span> Thinking...' : 'Ask';
+    }
+
+    function pushHistory(question, answer, context, sources){
+      history.unshift({question, answer, context, sources});
+
+      const item = document.createElement('div');
+      item.className = 'hist-item';
+      item.innerHTML = `
+        <div class="hist-q">Q: ${question}</div>
+        <div class="hist-a">A: ${answer}</div>
+      `;
+      item.addEventListener('click', () => {
+        showResponse(answer, context, sources);
+        window.scrollTo({top:0,behavior:'smooth'});
+      });
+
+      historyList.prepend(item);
+      itemsCount.textContent = history.length;
+    }
+
+    function showResponse(answer, context, sources){
+      responseArea.style.display = 'block';
+      answerText.textContent = answer || '(no answer)';
+      if(context && context.trim()){
+        contextBox.style.display = 'block';
+        contextText.textContent = context;
+      } else {
+        contextBox.style.display = 'none';
+      }
+      metaBox.textContent = sources?.length ? 'Sources: ' + JSON.stringify(sources) : '';
+    }
+
+    clearBtn.addEventListener('click', () => {
+      history = [];
+      historyList.innerHTML = '';
+      itemsCount.textContent = '0';
+      responseArea.style.display = 'none';
+      qInput.value = '';
+    });
+
+    copyBtn.addEventListener('click', () => {
+      if(!history.length) return;
+      navigator.clipboard.writeText(history[0].answer || '');
+    });
+
+    async function askQuestion(){
+      const q = qInput.value.trim();
+      if(!q) return;
+      setLoading(true);
+      try{
+        const res = await fetch(`${BACKEND_URL}/ask`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({question: q})
+        });
+        const data = await res.json();
+        const ans = data.answer || "No answer.";
+        const ctx = data.context || '';
+        const sources = data.sources || [];
+        pushHistory(q, ans, ctx, sources);
+        showResponse(ans, ctx, sources);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    askBtn.addEventListener('click', askQuestion);
+
+    qInput.addEventListener('keydown', e => {
+      if(e.key === 'Enter' && !e.shiftKey){
+        e.preventDefault();
+        askQuestion();
+      }
+    });
+  </script>
+</body>
+</html>

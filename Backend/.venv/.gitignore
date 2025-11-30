@@ -1,0 +1,6 @@
+
+# created by virtualenv automatically
+.env
+venv/
+__pycache__/  
+knowledge_base.pkl  
